@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/THALASSAR%20%E2%80%94%20Ragnarok%20Landing.html"
+    }
+  ]
+}

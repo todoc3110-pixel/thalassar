@@ -1,0 +1,30 @@
+name: Monitor ARK server status
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nitrado-server-status-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Check server status
+        env:
+          MONITOR_URL: ${{ secrets.MONITOR_URL }}
+          MONITOR_SECRET: ${{ secrets.MONITOR_SECRET }}
+        run: |
+          if [[ -z "$MONITOR_URL" || -z "$MONITOR_SECRET" ]]; then
+            echo "Configure MONITOR_URL and MONITOR_SECRET in GitHub Actions secrets."
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            --max-time 45 \
+            --request POST \
+            --header "Authorization: Bearer $MONITOR_SECRET" \
+            "$MONITOR_URL/api/server-status"

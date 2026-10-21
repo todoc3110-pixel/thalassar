@@ -36,29 +36,45 @@ function createResponse(body, ok = true) {
 function mockMonitor({ serverStatus, initialState = null }) {
   Object.assign(process.env, environment);
   let storedState = initialState;
+  let storedStartedAt = initialState === "started" ? "1" : null;
   const discordMessages = [];
 
   global.fetch = async (url, options = {}) => {
     if (url.startsWith("https://api.nitrado.net/")) {
       return createResponse({
         status: "success",
-        data: { gameserver: { status: serverStatus } },
+        data: {
+          gameserver: {
+            status: serverStatus,
+            location: "DE",
+          },
+        },
       });
     }
 
     if (url === environment.KV_REST_API_URL) {
-      const [command] = JSON.parse(options.body);
+      const [command, key, value] = JSON.parse(options.body);
       if (command === "GET") {
-        return createResponse({ result: storedState });
+        return createResponse({
+          result: key.endsWith(":started-at") ? storedStartedAt : storedState,
+        });
       }
       if (command === "SET") {
-        storedState = JSON.parse(options.body)[2];
+        if (key.endsWith(":started-at")) {
+          storedStartedAt = value;
+        } else {
+          storedState = value;
+        }
         return createResponse({ result: "OK" });
+      }
+      if (command === "DEL") {
+        storedStartedAt = null;
+        return createResponse({ result: 1 });
       }
     }
 
     if (url === environment.DISCORD_WEBHOOK_URL) {
-      discordMessages.push(JSON.parse(options.body).content);
+      discordMessages.push(JSON.parse(options.body));
       return createResponse({}, true);
     }
 
@@ -84,6 +100,15 @@ function mockMonitor({ serverStatus, initialState = null }) {
     request: {
       method: "POST",
       headers: { authorization: `Bearer ${environment.MONITOR_SECRET}` },
+      body: {
+        report: {
+          pingMs: 42,
+          mapName: "Ragnarok",
+          playerCount: 1,
+          maxPlayers: 70,
+          players: [{ name: "Survivor", durationSeconds: 3661 }],
+        },
+      },
     },
   };
 }
@@ -95,8 +120,15 @@ test("initial poll records the current state without sending a notification", as
 
   assert.equal(monitor.response.statusCode, 200);
   assert.equal(monitor.state(), "started");
-  assert.deepEqual(monitor.discordMessages(), []);
+  assert.equal(monitor.discordMessages().length, 1);
   assert.equal(monitor.response.body.notificationSent, false);
+  assert.equal(monitor.response.body.reportSent, true);
+  assert.match(monitor.discordMessages()[0].content, /servidor encendido/);
+  assert.match(monitor.discordMessages()[0].content, /Ping: 42 ms/);
+  assert.match(monitor.discordMessages()[0].content, /Jugadores: 1\/70/);
+  assert.match(monitor.discordMessages()[0].content, /Región: DE/);
+  assert.match(monitor.discordMessages()[0].content, /Mapa: Ragnarok/);
+  assert.match(monitor.discordMessages()[0].content, /Survivor: 1 h 1 min/);
 });
 
 test("sends one notification when the server changes from stopped to started", async () => {
@@ -109,16 +141,13 @@ test("sends one notification when the server changes from stopped to started", a
 
   assert.equal(monitor.response.statusCode, 200);
   assert.equal(monitor.state(), "started");
-  assert.deepEqual(monitor.discordMessages(), [
-    "El servidor de ARK: Survival Ascended Thalassar está encendido.",
-  ]);
+  assert.equal(monitor.discordMessages().length, 1);
+  assert.match(monitor.discordMessages()[0].content, /Cambio detectado/);
   assert.equal(monitor.response.body.notificationSent, true);
 
   await serverStatus(monitor.request, monitor.response);
 
-  assert.deepEqual(monitor.discordMessages(), [
-    "El servidor de ARK: Survival Ascended Thalassar está encendido.",
-  ]);
+  assert.equal(monitor.discordMessages().length, 2);
   assert.equal(monitor.response.body.notificationSent, false);
 });
 
@@ -132,14 +161,13 @@ test("sends one notification when the server changes from started to stopped", a
 
   assert.equal(monitor.response.statusCode, 200);
   assert.equal(monitor.state(), "stopped");
-  assert.deepEqual(monitor.discordMessages(), [
-    "El servidor de ARK: Survival Ascended Thalassar está apagado.",
-  ]);
+  assert.equal(monitor.discordMessages().length, 1);
+  assert.match(monitor.discordMessages()[0].content, /servidor apagado/);
   assert.equal(monitor.response.body.notificationSent, true);
 
   await serverStatus(monitor.request, monitor.response);
 
-  assert.equal(monitor.discordMessages().length, 1);
+  assert.equal(monitor.discordMessages().length, 2);
   assert.equal(monitor.response.body.notificationSent, false);
 });
 

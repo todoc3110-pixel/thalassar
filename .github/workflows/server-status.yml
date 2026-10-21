@@ -12,19 +12,18 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 3
     steps:
       - name: Check server status
         env:
           MONITOR_URL: ${{ secrets.MONITOR_URL }}
           MONITOR_SECRET: ${{ secrets.MONITOR_SECRET }}
+          NITRADO_API_TOKEN: ${{ secrets.NITRADO_API_TOKEN }}
+          NITRADO_SERVICE_ID: ${{ secrets.NITRADO_SERVICE_ID }}
         run: |
-          if [[ -z "$MONITOR_URL" || -z "$MONITOR_SECRET" ]]; then
-            echo "Configure MONITOR_URL and MONITOR_SECRET in GitHub Actions secrets."
+          if [[ -z "$MONITOR_URL" || -z "$MONITOR_SECRET" || -z "$NITRADO_API_TOKEN" || -z "$NITRADO_SERVICE_ID" ]]; then
+            echo "Configure MONITOR_URL, MONITOR_SECRET, NITRADO_API_TOKEN, and NITRADO_SERVICE_ID in GitHub Actions secrets."
             exit 1
           fi
-          curl --fail --silent --show-error \
-            --max-time 45 \
-            --request POST \
-            --header "Authorization: Bearer $MONITOR_SECRET" \
-            "$MONITOR_URL/api/server-status"
+          python -m pip install --disable-pip-version-check python-a2s
+          python .github/scripts/report-server-status.py
